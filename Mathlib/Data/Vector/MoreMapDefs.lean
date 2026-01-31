@@ -290,7 +290,7 @@ lemma range_plus (n m : Nat) :
       cast_refl, append_cons (bs := range' (n + 1) n')]
 
 lemma range_eq_ofFn (n : Nat) :
-    range n = ofFn (fun i : Fin n ↦ i.1) := by
+    range n = ofFn (fun i : Fin n ↦ i.val) := by
   induction n
   next => simp only [range_zero, ofFn_zero]
   next n' ih =>
@@ -319,20 +319,21 @@ theorem mapIdx_cons {f : Nat → α → β} {as : Vector α n} {a : α} :
   rfl
 
 lemma mapIdx_eq_List_mapIdx (as : List.Vector α n) :
-    as.mapIdx f = ⟨as.1.mapIdx f, by simp [*, length_mapIdx]⟩ := by
+    as.mapIdx f = ⟨as.toList.mapIdx f, by simp [*, length_mapIdx]⟩ := by
   induction as generalizing f
   · rfl
   · expose_names
-    simp only [Nat.succ_eq_add_one, length_append, mapIdx_cons, cons_val, List.mapIdx_cons]
     specialize h (fun i ↦ f (i+1))
+    simp only [Nat.succ_eq_add_one, length_append, mapIdx_cons, toList_cons, List.mapIdx_cons]
     rw [←cons] <;> simp_all
 
 @[grind =]
 theorem mapIdx_append {as : Vector α n} {bs : Vector α m} :
     (as ++ bs).mapIdx f = as.mapIdx f ++ bs.mapIdx fun i => f (i + n) := by
-  rcases as with ⟨as, as_h⟩
-  rcases bs with ⟨bs, bs_h⟩
-  simp only [mapIdx_eq_List_mapIdx, append_def, List.mapIdx_append, as_h]
+  rcases as with ⟨as, rfl⟩
+  rcases bs with ⟨bs, rfl⟩
+  simp [mapIdx_eq_List_mapIdx, append_def, List.mapIdx_append]
+
 
 @[simp, grind =] theorem mapIdx_concat {as : Vector α n} {a : α} :
     (as ++ singleton a).mapIdx f = as.mapIdx f ++ singleton (f n a) := by
@@ -344,12 +345,12 @@ theorem mapIdx_singleton {a : α} : mapIdx f (singleton a) = singleton (f 0 a) :
 @[simp, grind =] theorem mapIdx_mapIdx {γ : Type*} {as : Vector α n}
     {f : Nat → α → β} {g : Nat → β → γ} :
     (as.mapIdx f).mapIdx g = as.mapIdx (fun i => g i ∘ f i) := by
-  simp only [mapIdx_eq_List_mapIdx, List.mapIdx_mapIdx]
+  simp only [mapIdx_eq_List_mapIdx, toList_mk, List.mapIdx_mapIdx]
 
 @[simp] lemma cast_mapIdx (as : Vector α n) (f : Nat → α → β) {h : n = m} :
     (as.cast h).mapIdx f = (as.mapIdx f).cast h := by
-  rcases as with ⟨as, as_h⟩
-  simp only [mapIdx_eq_List_mapIdx]
+  rcases as with ⟨as, rfl⟩
+  simp only [cast_mk, mapIdx_eq_List_mapIdx, toList_mk]
 
 lemma get_mapIdx (as : Vector α n) (i : Fin n) (f : Nat → α → β) :
     (as.mapIdx f).get i = f i (as.get i) := by
@@ -373,11 +374,192 @@ lemma mapIdx_id (as : Vector α n) :
 
 lemma mapIdx_idx (as : Vector α n) :
     as.mapIdx (fun i _ ↦ i) = range n := by
-
+  apply ext
+  simp only [get_mapIdx, get_range, implies_true]
 
 end MapIdx
 
+section MapFinIdx
+
+-- Maps elements of a vector using the function `f`, which also receives the index of the element.
+@[inline] def mapFinIdx {n : Nat} (f : (i : Nat) → α → (i < n) → β) (as : List.Vector α n) :
+    List.Vector β n :=
+  match n, as with
+  | 0, ⟨[], _⟩ => nil
+  | n'+1, ⟨a :: l, h⟩ => f 0 a (by omega) ::ᵥ mapFinIdx (n := n')
+      (fun i a inv ↦ f (i+1) a (by simp_all)) ⟨l, by simp_all⟩
+
+@[simp, grind =]
+theorem mapFinIdx_nil {f : (i : Nat) → α → (i < 0) → β} : mapFinIdx f nil = nil := rfl
+
+@[simp, grind =]
+theorem mapFinIdx_cons {f : (i : Nat) → α → (i < n.succ) → β} {as : Vector α n} {a : α} :
+    (a ::ᵥ as).mapFinIdx f = f 0 a (by omega) ::ᵥ
+      as.mapFinIdx (fun i a inv => f (i + 1) a (by omega)) := by
+  rcases as with ⟨as, as_h⟩
+  rfl
+
+lemma mapFinIdx_eq_List_mapFinIdx (as : List.Vector α n) {f : (i : Nat) → α → (i < n) → β} :
+    as.mapFinIdx f = ⟨as.toList.mapFinIdx (fun i a inv ↦ f i a (by simp_all)), by simp_all⟩ := by
+  induction as
+  next => rfl
+  next n' a as ih =>
+    simp only [Nat.succ_eq_add_one, length_append, mapFinIdx_cons, toList_cons, List.mapFinIdx_cons]
+    specialize ih (f := fun i a inv ↦ f (i+1) a (by omega))
+    rw [←cons] <;> simp_all
+
+@[grind =]
+theorem mapFinIdx_append {as : Vector α n} {bs : Vector α m} {f : (i : Nat) → α → (i < n + m) → β} :
+    (as ++ bs).mapFinIdx f = as.mapFinIdx (fun i a h ↦ f i a  <| by omega) ++
+      bs.mapFinIdx fun i a h => f (i + n) a (by omega) := by
+  rcases as with ⟨as, rfl⟩
+  rcases bs with ⟨bs, rfl⟩
+  simp only [length_append, append_def, mapFinIdx_eq_List_mapFinIdx, toList_mk, mapFinIdx_append]
+
+@[simp, grind =] theorem mapFinIdx_concat {as : Vector α n} {a : α}
+      {f : (i : Nat) → α → (i < n + 1) → β} :
+    (as ++ singleton a).mapFinIdx f = as.mapFinIdx (fun i a h ↦ f i a (by omega)) ++
+      singleton (f n a (by omega)) := by
+  simp only [length_append, mapFinIdx_append, mapFinIdx_cons, zero_add, mapFinIdx_nil]
+
+theorem mapFinIdx_singleton {a : α} {f : (i : Nat) → α → (i < 1) → β} :
+    mapFinIdx f (singleton a) = singleton (f 0 a (by omega)) := by
+  simp only [mapFinIdx_cons, length_append, mapFinIdx_nil]
+
+@[simp, grind =] theorem mapFinIdx_mapFinIdx {γ : Type*} {as : Vector α n}
+    {f : (i : Nat) → α → (i < n) → β} {g : (i : Nat) → β → (i < n) → γ} :
+    (as.mapFinIdx f).mapFinIdx g = as.mapFinIdx fun i a inv ↦ g i (f i a inv) inv := by
+  simp only [mapFinIdx_eq_List_mapFinIdx, toList_mk, List.mapFinIdx_mapFinIdx]
+
+@[simp] lemma cast_mapFinIdx (as : Vector α n) (f : (i : Nat) → α → (i < m) → β) {h : n = m} :
+    (as.cast h).mapFinIdx f = (as.mapFinIdx fun i a h ↦ f i a (by omega)).cast h := by
+  rcases as with ⟨as, rfl⟩
+  simp only [cast_mk, mapFinIdx_eq_List_mapFinIdx, toList_mk]
+
+@[simp]
+lemma get_mapFinIdx (as : Vector α n) (i : Fin n) (f : (i : Nat) → α → (i < n) → β) :
+    (as.mapFinIdx f).get i = f i (as.get i) i.isLt := by
+  induction as
+  next =>
+    rcases i with ⟨i, ⟨⟩⟩
+  next n_1 a as ih =>
+    simp_all only [Nat.succ_eq_add_one, length_append, mapFinIdx_cons]
+    rcases i with ⟨i, i_lt⟩
+    cases i
+    next => simp only [length_append, Nat.succ_eq_add_one, Fin.zero_eta, get_zero, head_cons]
+    next i' => rw [Fin.plus_one_succ, get_cons_succ, get_cons_succ, ih, Fin.succ_mk]
+
+lemma mapFinIdx_id (as : Vector α n) :
+    as.mapFinIdx (fun _ a _ ↦ a) = as := by
+  induction as
+  next => rfl
+  next n' a as ih =>
+    simp only [Nat.succ_eq_add_one, length_append, mapFinIdx_cons, ih]
+
+lemma mapFinIdx_idx (as : Vector α n) :
+    as.mapFinIdx (fun i _ _ ↦ i) = range n := by
+  apply ext
+  simp only [get_mapFinIdx, get_range, implies_true]
+
+end MapFinIdx
+
+section mapM
+
+@[inline] def mapM {m} [Monad m] {n : Nat} (f : α → m β) (as : List.Vector α n) :
+    m (List.Vector β n) :=
+  match n, as with
+  | 0, _ => pure nil
+  | _+1, as => return (← f as.head) ::ᵥ (← as.tail.mapM f)
+
+@[simp, grind =]
+theorem mapM_nil {m} [Monad m] (f : α → m β) : mapM f nil = pure nil := rfl
+
+@[simp, grind =]
+theorem mapM_cons {m} [Monad m] (f : α → m β) {as : Vector α n} {a : α} :
+    (a ::ᵥ as).mapM f = return (← f a) ::ᵥ (← as.mapM f) := by
+  rcases as with ⟨as, rfl⟩
+  rfl
+
+lemma toList_mapM {m} [Monad m] [LawfulMonad m] (f : α → m β) (as : Vector α n) :
+    toList <$> as.mapM f = as.toList.mapM f := by
+  induction as with
+  | nil => simp only [toList_empty, List.mapM_nil, mapM_nil, map_pure]
+  | @cons n a as ih => simp_all only [← ih, Nat.succ_eq_add_one, length_append, mapM_cons,
+    bind_pure_comp, map_bind, Functor.map_map, toList_cons, List.mapM_cons]
+
+end mapM
+
+section mapIdxM
+
+@[inline] def mapIdxM {m} [Monad m] {n : Nat} (f : (i : Nat) → α → m β) (as : List.Vector α n) :
+      m <| List.Vector β n :=
+  match n, as with
+  | 0, ⟨[], _⟩ => pure nil
+  | n'+1, ⟨a :: l, h⟩ => return (← f 0 a) ::ᵥ
+      (← mapIdxM (n := n') (fun i ↦ f (i+1)) ⟨l, by simp_all⟩)
+
+lemma mapIdxM_nil {m} [Monad m] (f : Nat → α → m β) :
+    nil.mapIdxM f = pure nil := by simp [mapIdxM]
+
+lemma mapIdxM_cons {m} [Monad m] {n : Nat} (f : Nat → α → m β) (a : α) (as : Vector α n) :
+    (a ::ᵥ as).mapIdxM f = return (← f 0 a) ::ᵥ (← as.mapIdxM fun i ↦ f (i+1)) := by
+  rcases as with ⟨as, as_h⟩
+  simp [mapIdxM]
+
+end mapIdxM
+
+section ListLemmas
+@[simp, grind =] theorem List.mapIdxM_nil {m} [Monad m] {f : Nat → α → m β} :
+    [].mapIdxM f = pure [] := rfl
+
+#check List.mapIdxM'
+@[simp, grind =] theorem List.mapIdxM_cons {m} [Monad m] {f : Nat → α → m β} (a : α) (l : List α) :
+    (a :: l).mapIdxM f = (return (← f 0 a) :: (← l.mapIdxM (fun i ↦ f (i+1)))) := by
+  rw [← List.mapIdxM'_eq_mapIdxM]
+  simp []
 
 
+end ListLemmas
 
-end Vector
+section mapFinIdxM
+
+@[inline] def mapFinIdxM {m} [Monad m] {n : Nat} (f : (i : Nat) → α → (i < n) → m β)
+    (as : List.Vector α n) : m <| List.Vector β n :=
+  match n, as with
+  | 0, ⟨[], _⟩ => pure nil
+  | n'+1, ⟨a :: l, h⟩ => return (← f 0 a (by omega)) ::ᵥ (← mapFinIdxM (n := n')
+      (fun i a inv ↦ f (i+1) a (by simp_all)) ⟨l, by simp_all⟩)
+
+lemma mapFinIdxM_nil {m} [Monad m] (f : (i : Nat) → α → (i < 0) → m β) :
+    nil.mapFinIdxM f = pure nil := by simp [mapFinIdxM]
+
+lemma mapFinIdxM_cons {m} [Monad m] {n : Nat} (f : (i : Nat) → α → (i < n + 1) → m β)
+      (a : α) (as : Vector α n) :
+    (a ::ᵥ as).mapFinIdxM f = return (← f 0 a (by omega)) ::ᵥ
+      (← as.mapFinIdxM fun i a h ↦ f (i+1) a (by omega)) := by
+  rcases as with ⟨as, as_h⟩
+  simp [mapFinIdxM]
+
+lemma mapIdxM_mapFinIdxM {m} [Monad m] {n : Nat} (f : (i : Nat) → α → m β) (as : Vector α n) :
+    as.mapIdxM f = as.mapFinIdxM (fun i a _ ↦ f i a) := by
+  induction as generalizing f with
+  | nil => simp [mapIdxM_nil, mapFinIdxM_nil]
+  | cons ih => simp only [Nat.succ_eq_add_one, length_append, mapIdxM_cons, ih, mapFinIdxM_cons]
+
+-- lemma monadMap_pure {m} [Monad m] {α β : Type*} {f : α → β} {a : α} :
+--     f <$> (pure a) = pure (f a) := by
+--   simp
+
+lemma toList_mapFinIdxM {m} [Monad m] [LawfulMonad m] {n : Nat} (f : (i : Nat) → α → (i < n) → m β) (as : Vector α n) :
+    toList <$> as.mapFinIdxM f = as.toList.mapFinIdxM (fun i a h ↦ f i a (by simp_all only [toList_length])) := by
+  induction as generalizing f with
+  | nil => simp only [mapFinIdxM_nil, map_pure, toList_empty, List.mapFinIdxM, toList_nil,
+    length_nil, mapFinIdxM.go]
+  | cons ih =>
+    expose_names
+    simp [mapFinIdxM_cons, List.mapFinIdxM, List.mapFinIdxM.go]
+    specialize ih (fun i a h ↦ f (i + 1) a (by omega))
+
+end mapFinIdxM
+
+end List.Vector

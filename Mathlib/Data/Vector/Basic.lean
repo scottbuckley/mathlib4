@@ -395,23 +395,23 @@ theorem mOfFn_pure {m} [Monad m] [LawfulMonad m] {α} :
 
 /-- Apply a monadic function to each component of a vector,
 returning a vector inside the monad. -/
-def mapM {m} [Monad m] {α} {β : Type u} (f : α → m β) : ∀ {n}, Vector α n → m (Vector β n)
+def mmap {m} [Monad m] {α} {β : Type u} (f : α → m β) : ∀ {n}, Vector α n → m (Vector β n)
   | 0, _ => pure nil
   | _ + 1, xs => do
     let h' ← f xs.head
-    let t' ← mapM f xs.tail
+    let t' ← mmap f xs.tail
     pure (h' ::ᵥ t')
 
 @[simp]
-theorem mapM_nil {m} [Monad m] {α β} (f : α → m β) : mapM f nil = pure nil :=
+theorem mmap_nil {m} [Monad m] {α β} (f : α → m β) : mmap f nil = pure nil :=
   rfl
 
 @[simp]
-theorem mapM_cons {m} [Monad m] {α β} (f : α → m β) (a) :
+theorem mmap_cons {m} [Monad m] {α β} (f : α → m β) (a) :
     ∀ {n} (v : Vector α n),
-      mapM f (a ::ᵥ v) = do
+      mmap f (a ::ᵥ v) = do
         let h' ← f a
-        let t' ← mapM f v
+        let t' ← mmap f v
         pure (h' ::ᵥ t')
   | _, ⟨_, rfl⟩ => rfl
 
