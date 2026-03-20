@@ -7,32 +7,33 @@ module
 
 public import Mathlib.Data.Vector.Defs
 public import Mathlib.Data.Vector.Basic
-import Mathlib.Tactic
+import Mathlib.Tactic.DepRewrite
+
+/-!
+  This file introduces a number of new definitions and lemmas for `List.Vector`,
+  in particular a number of `map` variants and their associated lemmas.
+-/
 
 set_option linter.listVariables true -- Enforce naming conventions for `List`/`Array`/`Vector` vars.
 set_option linter.indexVariables true -- Enforce naming conventions for index variables.
 
-/-!
-  This file adds a number of missing definitions and lemmas to the `Vector` API.
--/
+@[expose] public section
+
+-- unrelated to `List.Vector` but useful in this file
+lemma Fin.mk_succ {n : Nat} (i : Nat) (h : i + 1 < n + 1) :
+    Fin.mk (i + 1) h = (Fin.mk (n := n) i (by omega)).succ := rfl
 
 namespace List.Vector
-
 variable {α β : Type*} {n m k : ℕ}
 
 section Generic
 
 abbrev singleton (a : α) : Vector α 1 := a ::ᵥ nil
 
-lemma cons_eq_cons {a b : α} {as bs : Vector α n} :
-    a = b → as = bs → a ::ᵥ as = b ::ᵥ bs := by
-  intros h1 h2
-  simp [h1, h2]
+@[grind ←] lemma cons_eq_cons {a b : α} {as bs : Vector α n} (h₁ : a = b) (h₂ : as = bs) :
+    a ::ᵥ as = b ::ᵥ bs := by simp [h₁, h₂]
 
-@[simp] lemma ofFn_zero {α : Type*} {f : Fin 0 → α} : ofFn f = nil := rfl
-
-lemma Fin.plus_one_succ {n : Nat} (i : Nat) (h : i + 1 < n + 1) :
-    Fin.mk (i + 1) h = (Fin.mk (n := n) i (by omega)).succ := rfl
+@[simp, grind =] lemma ofFn_zero {α : Type*} {f : Fin 0 → α} : ofFn f = nil := rfl
 
 end Generic
 
@@ -44,45 +45,44 @@ value. I've made it a rule never to add to `simp` anything that *introduces*
 `cast`, but i've added plenty of rules to simp that push `cast` further
 to the "outside" of an expression. -/
 
-/-- Creates a vector from another with a provably equal length. -/
-@[inline, expose] protected def cast (h : n = m) (as : Vector α n) : Vector α m :=
+@[inline, expose] def cast (h : n = m) (as : Vector α n) : Vector α m :=
   ⟨as.toList, by simp only [toList_length, h]⟩
 
-@[simp] lemma cast_refl {n : Nat} (as : Vector α n) :
-    (as.cast rfl) = as := rfl
+@[simp, grind =] lemma cast_refl {n : Nat} (as : Vector α n) : (as.cast rfl) = as := rfl
 
-@[simp] theorem cast_mk {as : List α} {h : as.length = n} {h' : n = m} :
-    cast h' ⟨as, h⟩ = ⟨as, (by simp only [h, h'])⟩ := rfl
+@[simp, grind =] theorem cast_mk {as : List α} {h₁ : as.length = n} {h₂ : n = m} :
+    cast h₂ ⟨as, h₁⟩ = ⟨as, (by simp only [h₁, h₂])⟩ := rfl
 
-@[simp] lemma cast_cast (h1 : m = n) (h2 : n = k) (as : Vector α m) :
+@[simp, grind =] lemma cast_cast (h1 : m = n) (h2 : n = k) (as : Vector α m) :
     (as.cast h1).cast h2 = as.cast (by simp_all only) := rfl
 
-@[simp] lemma cast_cons (h : n = m) (a : α) (as : Vector α n) :
+@[simp, grind =] lemma cast_cons (h : n = m) (a : α) (as : Vector α n) :
     a ::ᵥ (as.cast h) = (a ::ᵥ as).cast (by omega) := rfl
 
-@[simp] lemma cast_map (as : Vector α n) (f : α → β) {h : n = m} :
+@[simp, grind =] lemma cast_map (as : Vector α n) (f : α → β) {h : n = m} :
     (as.cast h).map f = (as.map f).cast h := by rfl
 
 @[simp] lemma cast_f (f : {k : Nat} → Vector α k → Vector β k) (as : Vector α n) {h : n = m} :
     f (as.cast h) = (f as).cast h := by cases h ; rfl
 
-@[simp] lemma cast_append_left (h : n = k) (as : Vector α n) (bs : Vector α m) :
+@[simp, grind =] lemma cast_append_left (h : n = k) (as : Vector α n) (bs : Vector α m) :
     as.cast h ++ bs = (as ++ bs).cast (by omega) := rfl
 
-@[simp] lemma cast_append_right (h : m = k) (as : Vector α n) (bs : Vector α m) :
+@[simp, grind =] lemma cast_append_right (h : m = k) (as : Vector α n) (bs : Vector α m) :
     as ++ bs.cast h = (as ++ bs).cast (by omega) := rfl
+
+@[simp, grind =] lemma cast_append_both {m n k i : Nat} (h₁ : n = i) (h₂ : m = k)
+    (as : Vector α n) (bs : Vector α m) :
+    as.cast h₁ ++ bs.cast h₂ = (as ++ bs).cast (by omega) := rfl
 
 lemma cast_eq_symm {h : m = n} {as : Vector α n} {bs : Vector α m} (hc : as = bs.cast h) :
     bs = as.cast (by simp_all only) := by simp_all only [cast_cast, cast_refl]
 
--- lemma cast_right {n m : Nat} {h : n = m} {as : Vector α n} {bs : Vector α m} :
---     as.cast h = bs → as = bs.cast (Eq.symm h) := by
---   intros h2
---   simp only [Eq.symm h2, cast_cast, cast_refl]
-
 end Cast
 
 section Append
+/- Some more lemmas about `List.Vector.append` (++), many of which
+result in expressions using `cast`, so most are not added to `simp`. -/
 
 lemma append_cons (as : Vector α n) (b : α) (bs : Vector α m) :
     as ++ (b ::ᵥ bs) = ((as ++ singleton b) ++ bs).cast (by omega) := by
@@ -113,14 +113,14 @@ lemma append_assoc (as : Vector α n) (bs : Vector α m) (cs : Vector α k) :
   rcases as with ⟨as, rfl⟩
   rcases bs with ⟨bs, rfl⟩
   rcases cs with ⟨cs, rfl⟩
-  simp [append_def, List.append_assoc, cast_mk]
+  simp only [append_def, List.append_assoc, cast_mk]
 
 lemma append_assoc.symm (as : Vector α n) (bs : Vector α m) (cs : Vector α k) :
     (as ++ bs ++ cs) = (as ++ (bs ++ cs)).cast (by omega) := by
   rcases as with ⟨as, rfl⟩
   rcases bs with ⟨bs, rfl⟩
   rcases cs with ⟨cs, rfl⟩
-  simp [append_def, List.append_assoc, cast_mk]
+  simp only [append_def, List.append_assoc, cast_mk]
 
 lemma singleton_append (a : α) (as : Vector α n) :
     (singleton a ++ as) = (a ::ᵥ as).cast (by omega) := by
@@ -145,9 +145,9 @@ theorem ofFn_succ_last {n} {f : Fin (n + 1) → α} :
     ofFn f = (ofFn fun i => f i.castSucc) ++ singleton (f (Fin.last n)) := by
   induction n with
   | zero =>
-    simp only [length_append, Nat.reduceAdd, ofFn_zero, Fin.last_zero, Fin.isValue]
-    rw [nil_append]
-    simp only [ofFn_succ, Fin.isValue, ofFn_zero, length_append, Nat.reduceAdd, cast_refl]
+    simp only [length_append, Nat.reduceAdd, Fin.last_zero, Fin.isValue]
+    simp_all only [ofFn_zero, Fin.isValue]
+    rfl
   | succ n ih =>
     rw [ofFn_succ]
     conv => rhs; rw [ofFn_succ]
@@ -159,7 +159,8 @@ theorem ofFn_succ_last {n} {f : Fin (n + 1) → α} :
 end ofFn
 
 section Range
-
+/- Implements `range`, producing a vector of `Nat`s. Various lemmas for this method
+are also provided, many of which require mapping to an alternative definition `range'`. -/
 def range (n : Nat) : Vector Nat n :=
   loop n nil (zero_add n)
 where
@@ -167,7 +168,7 @@ where
   | 0,   acc, h => acc.cast <| by omega
   | z+1, acc, h => loop z (z ::ᵥ acc) <| by omega
 
-@[simp] lemma range_zero :
+@[simp, grind =] lemma range_zero :
     range 0 = nil := by
   simp [range, range.loop]
 
@@ -216,7 +217,7 @@ lemma range'_append (s m n step : Nat) :
     range' s m step ++ range' (s + step * m) n step = range' s (m + n) step := by
   induction m generalizing s n
   next =>
-    simp only [length_append, range'_zero, mul_zero, add_zero, nil_append]
+    simp only [length_append, range'_zero, Nat.mul_zero, add_zero, nil_append]
     rw! [Nat.zero_add]
     simp only [cast_refl]
   next m ih =>
@@ -234,8 +235,8 @@ lemma range'_append (s m n step : Nat) :
     range' s 1 step = singleton s := by simp only [range']
 
 @[simp] lemma range_eq_singleton :
-    range 1 = singleton 0 := by simp only [range, range.loop, Nat.succ_eq_add_one, length_append,
-      Nat.reduceAdd, cast_refl]
+    range 1 = singleton 0 := by
+  simp only [range, range.loop, Nat.succ_eq_add_one, length_append, Nat.reduceAdd, cast_refl]
 
 theorem range'_succ {s n step : Nat} :
     range' s (n + 1) step = range' s n step ++ singleton (s + step * n) := by
@@ -300,7 +301,8 @@ lemma range_eq_ofFn (n : Nat) :
 end Range
 
 section MapIdx
-
+/- Defines `mapIdx`, which is similar to `List.mapIdx`: the function being mapped also takes
+the index as a parameter. This section also provides a number of related lemmas. -/
 variable (f : Nat → α → β)
 
 -- Maps elements of a vector using the function `f`, which also receives the index of the element.
@@ -319,21 +321,21 @@ theorem mapIdx_cons {f : Nat → α → β} {as : Vector α n} {a : α} :
   rfl
 
 lemma mapIdx_eq_List_mapIdx (as : List.Vector α n) :
-    as.mapIdx f = ⟨as.toList.mapIdx f, by simp [*, length_mapIdx]⟩ := by
-  induction as generalizing f
-  · rfl
-  · expose_names
-    specialize h (fun i ↦ f (i+1))
+    as.mapIdx f = ⟨as.toList.mapIdx f, by simp only [length_mapIdx, toList_length]⟩ := by
+  induction as generalizing f with
+  | nil => rfl
+  | cons ih =>
+    expose_names
+    specialize ih (fun i ↦ f (i+1))
     simp only [Nat.succ_eq_add_one, length_append, mapIdx_cons, toList_cons, List.mapIdx_cons]
     rw [←cons] <;> simp_all
 
-@[grind =]
+@[simp, grind =]
 theorem mapIdx_append {as : Vector α n} {bs : Vector α m} :
     (as ++ bs).mapIdx f = as.mapIdx f ++ bs.mapIdx fun i => f (i + n) := by
   rcases as with ⟨as, rfl⟩
   rcases bs with ⟨bs, rfl⟩
   simp [mapIdx_eq_List_mapIdx, append_def, List.mapIdx_append]
-
 
 @[simp, grind =] theorem mapIdx_concat {as : Vector α n} {a : α} :
     (as ++ singleton a).mapIdx f = as.mapIdx f ++ singleton (f n a) := by
@@ -352,6 +354,7 @@ theorem mapIdx_singleton {a : α} : mapIdx f (singleton a) = singleton (f 0 a) :
   rcases as with ⟨as, rfl⟩
   simp only [cast_mk, mapIdx_eq_List_mapIdx, toList_mk]
 
+@[simp, grind =]
 lemma get_mapIdx (as : Vector α n) (i : Fin n) (f : Nat → α → β) :
     (as.mapIdx f).get i = f i (as.get i) := by
   induction as generalizing f
@@ -363,8 +366,11 @@ lemma get_mapIdx (as : Vector α n) (i : Fin n) (f : Nat → α → β) :
     rcases i with ⟨i, i_lt⟩
     cases i
     next => simp only [length_append, Nat.succ_eq_add_one, Fin.zero_eta, get_zero, head_cons]
-    next i' => rw [Fin.plus_one_succ, get_cons_succ, get_cons_succ, i_h, Fin.succ_mk]
+    next i' =>
+      simp only [← Nat.succ_eq_add_one]
+      rw [Fin.mk_succ, get_cons_succ, get_cons_succ, i_h]
 
+@[simp, grind =]
 lemma mapIdx_id (as : Vector α n) :
     as.mapIdx (fun _ a ↦ a) = as := by
   induction as
@@ -380,8 +386,9 @@ lemma mapIdx_idx (as : Vector α n) :
 end MapIdx
 
 section MapFinIdx
+/- Defines `mapFinIdx`, which is similar to `mapIdx`, but the function is also passed a proof that
+the index is less than the size of the vector. -/
 
--- Maps elements of a vector using the function `f`, which also receives the index of the element.
 @[inline] def mapFinIdx {n : Nat} (f : (i : Nat) → α → (i < n) → β) (as : List.Vector α n) :
     List.Vector β n :=
   match n, as with
@@ -416,22 +423,25 @@ theorem mapFinIdx_append {as : Vector α n} {bs : Vector α m} {f : (i : Nat) �
   rcases bs with ⟨bs, rfl⟩
   simp only [length_append, append_def, mapFinIdx_eq_List_mapFinIdx, toList_mk, mapFinIdx_append]
 
-@[simp, grind =] theorem mapFinIdx_concat {as : Vector α n} {a : α}
-      {f : (i : Nat) → α → (i < n + 1) → β} :
+@[simp, grind =]
+theorem mapFinIdx_concat {as : Vector α n} {a : α} {f : (i : Nat) → α → (i < n + 1) → β} :
     (as ++ singleton a).mapFinIdx f = as.mapFinIdx (fun i a h ↦ f i a (by omega)) ++
       singleton (f n a (by omega)) := by
   simp only [length_append, mapFinIdx_append, mapFinIdx_cons, zero_add, mapFinIdx_nil]
 
+@[simp, grind =]
 theorem mapFinIdx_singleton {a : α} {f : (i : Nat) → α → (i < 1) → β} :
     mapFinIdx f (singleton a) = singleton (f 0 a (by omega)) := by
   simp only [mapFinIdx_cons, length_append, mapFinIdx_nil]
 
-@[simp, grind =] theorem mapFinIdx_mapFinIdx {γ : Type*} {as : Vector α n}
+@[simp, grind =]
+theorem mapFinIdx_mapFinIdx {γ : Type*} {as : Vector α n}
     {f : (i : Nat) → α → (i < n) → β} {g : (i : Nat) → β → (i < n) → γ} :
     (as.mapFinIdx f).mapFinIdx g = as.mapFinIdx fun i a inv ↦ g i (f i a inv) inv := by
   simp only [mapFinIdx_eq_List_mapFinIdx, toList_mk, List.mapFinIdx_mapFinIdx]
 
-@[simp] lemma cast_mapFinIdx (as : Vector α n) (f : (i : Nat) → α → (i < m) → β) {h : n = m} :
+@[simp]
+lemma cast_mapFinIdx (as : Vector α n) (f : (i : Nat) → α → (i < m) → β) {h : n = m} :
     (as.cast h).mapFinIdx f = (as.mapFinIdx fun i a h ↦ f i a (by omega)).cast h := by
   rcases as with ⟨as, rfl⟩
   simp only [cast_mk, mapFinIdx_eq_List_mapFinIdx, toList_mk]
@@ -439,15 +449,14 @@ theorem mapFinIdx_singleton {a : α} {f : (i : Nat) → α → (i < 1) → β} :
 @[simp]
 lemma get_mapFinIdx (as : Vector α n) (i : Fin n) (f : (i : Nat) → α → (i < n) → β) :
     (as.mapFinIdx f).get i = f i (as.get i) i.isLt := by
-  induction as
-  next =>
-    rcases i with ⟨i, ⟨⟩⟩
-  next n_1 a as ih =>
+  induction as with
+  | nil => { rcases i with ⟨i, ⟨⟩⟩ } --fixme: not ure why these braces are needed here
+  | @cons n_1 a as ih =>
     simp_all only [Nat.succ_eq_add_one, length_append, mapFinIdx_cons]
     rcases i with ⟨i, i_lt⟩
-    cases i
-    next => simp only [length_append, Nat.succ_eq_add_one, Fin.zero_eta, get_zero, head_cons]
-    next i' => rw [Fin.plus_one_succ, get_cons_succ, get_cons_succ, ih, Fin.succ_mk]
+    cases i with
+    | zero => simp only [length_append, Nat.succ_eq_add_one, Fin.zero_eta, get_zero, head_cons]
+    | succ i' => rw [Fin.mk_succ, get_cons_succ, get_cons_succ, ih, Fin.succ_mk]
 
 lemma mapFinIdx_id (as : Vector α n) :
     as.mapFinIdx (fun _ a _ ↦ a) = as := by

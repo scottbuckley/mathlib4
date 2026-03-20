@@ -4025,6 +4025,7 @@ public import Mathlib.Data.Vector.Basic
 public import Mathlib.Data.Vector.Defs
 public import Mathlib.Data.Vector.MapLemmas
 public import Mathlib.Data.Vector.Mem
+public import Mathlib.Data.Vector.MoreMapDefs
 public import Mathlib.Data.Vector.Snoc
 public import Mathlib.Data.Vector.Zip
 public import Mathlib.Data.Vector3
